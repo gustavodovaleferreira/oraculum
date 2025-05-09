@@ -4,9 +4,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from utils import get_by_session_id
-from faiss_db import search_documents  # Importação adicionada
+from faiss_db import search_documents
 from dotenv import load_dotenv
 import os
+import re  # Usado para remover [Fonte X] e similares
 
 load_dotenv()
 
@@ -17,28 +18,31 @@ MODEL_CHAT = os.getenv("MODEL_CHAT")
 def clear_session_id():
     """Limpa o ID da sessão e reinicia o histórico"""
     st.session_state.session_id_chat = None
-    # Limpa o histórico associado à sessão anterior
     if "session_id_chat" in st.session_state:
         get_by_session_id(st.session_state.session_id_chat).clear()
 
 
 def load_llm():
-    """Configura o pipeline de LLM com suporte a RAG"""
+    """Configura o pipeline de LLM com suporte a RAG especializado em estética"""
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """Você é um assistente especialista que utiliza o seguinte contexto para responder perguntas:
+        ("system", """Você é um assistente altamente especializado nas áreas de estética facial, estética corporal e procedimentos estéticos avançados. 
+Baseie suas respostas exclusivamente nas informações fornecidas no contexto abaixo:
 
-        {context}
+{context}
 
-        Se o contexto não for relevante para a pergunta, explique que não encontrou informações relacionadas. 
-        Sempre cite a fonte usando [NOME_DO_ARQUIVO] ao final da frase relevante.""",
-         ),
+Caso o contexto não contenha informações relevantes à pergunta, informe isso de forma clara e respeitosa ao usuário. 
+Nunca forneça informações que não estejam no conteúdo fornecido, e jamais invente ou suponha dados.
+
+Utilize o conteúdo com precisão, e exiba os nomes dos arquivos ou referências de fonte nas respostas.
+
+Referencie o nome do arquivo .md conforme a fonte utilizada.
+
+Adote um tom profissional e objetivo. Explique termos técnicos de forma acessível, sempre que necessário, mantendo clareza e precisão nas respostas."""),
         MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ])
-
     return prompt | ChatOpenAI(
         api_key=OPENAI_API_KEY,
-        # Usando secrets do Streamlit
         temperature=0.5,
         model=MODEL_CHAT,
         streaming=True
@@ -53,51 +57,36 @@ def show():
         st.header("Opções de Chat")
         st.button("Limpar Sessão", on_click=clear_session_id)
 
-    # Gerenciamento de sessão seguro
     if not st.session_state.get("session_id_chat"):
-        st.session_state.session_id_chat = str(uuid4())  # Convertendo para string
+        st.session_state.session_id_chat = str(uuid4())
 
     chain = load_llm()
     history = get_by_session_id(st.session_state.session_id_chat)
 
-    # Exibir histórico existente
     for msg in history.messages:
         st.chat_message(msg.type).markdown(msg.content)
 
-    # Input do usuário
     if prompt := st.chat_input("Digite sua mensagem"):
-        # Adicionar e exibir mensagem do usuário imediatamente
         human_message = HumanMessage(content=prompt)
         history.add_messages([human_message])
         st.chat_message("human").markdown(prompt)
 
-        # Busca RAG no FAISS
         try:
             docs = search_documents(prompt, k=10)
-            # context = "\n\n".join([f"Fonte {i + 1}: {d.page_content}" for i, d in enumerate(docs)])
-            import pprint
-            pprint.pprint(docs)
-
             context = ""
-
-            # Formatar contexto com fontes
             for i, (doc, score) in enumerate(docs):
                 source = doc.metadata.get('source', 'Fonte desconhecida')
-                context += f"**Fonte {i + 1} ({source})**: {doc.page_content}\n\n"
-
+                context += f"Fonte {i + 1} ({source}): {doc.page_content}\n\n"
         except Exception as e:
             st.error(f"Erro na busca de contexto: {str(e)}")
             context = "Nenhum contexto encontrado."
-
-        # Preparar contexto histórico
+            
         chat_history = history.messages[:-1]
 
-        # Gerar resposta com streaming
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
 
-            # Processar cada chunk do stream
             try:
                 for chunk in chain.stream({
                     "question": prompt,
@@ -106,10 +95,14 @@ def show():
                 }):
                     if content := getattr(chunk, 'content', ''):
                         full_response += content
-                        response_placeholder.markdown(full_response + "▌")
+                        # Limpeza parcial durante o stream
+                        partial_clean = re.sub(r"\[\s*[^]]+\s*\]", "", full_response)
+                        response_placeholder.markdown(partial_clean + "▌")
 
-                response_placeholder.markdown(full_response)
-                history.add_messages([AIMessage(content=full_response)])
+                # Limpeza final da resposta antes de exibir e salvar
+                cleaned_response = re.sub(r"\[\s*[^]]+\s*\]", "", full_response)
+                response_placeholder.markdown(cleaned_response.strip())
+                history.add_messages([AIMessage(content=cleaned_response.strip())])
 
             except Exception as e:
                 st.error(f"Erro na geração da resposta: {str(e)}")
