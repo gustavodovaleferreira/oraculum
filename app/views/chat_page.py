@@ -7,37 +7,41 @@ from utils import get_by_session_id
 from faiss_db import search_documents
 from dotenv import load_dotenv
 import os
-import re  # Usado para remover [Fonte X] e similares
+import re
 
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL_CHAT = os.getenv("MODEL_CHAT")
 
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 def clear_session_id():
-    """Limpa o ID da sessão e reinicia o histórico"""
     st.session_state.session_id_chat = None
     if "session_id_chat" in st.session_state:
         get_by_session_id(st.session_state.session_id_chat).clear()
 
-
 def load_llm():
-    """Configura o pipeline de LLM com suporte a RAG especializado em estética"""
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """Você é um assistente altamente especializado nas áreas de estética facial, estética corporal e procedimentos estéticos avançados.
+        ("system", """
+Você é um assistente especializado em estética facial, corporal e procedimentos estéticos.
 
-Baseie suas respostas exclusivamente nas informações fornecidas no contexto abaixo:
+Baseie suas respostas principalmente no conteúdo do contexto abaixo, extraído de arquivos fornecidos.
 
 {context}
 
-Caso o contexto não contenha informações relevantes à pergunta, informe isso de forma clara e respeitosa ao usuário.
-Nunca forneça informações que não estejam no conteúdo fornecido, e jamais invente ou suponha dados.
+Regras obrigatórias para sua resposta:
 
-Utilize o conteúdo com precisão. Sempre que utilizar alguma informação do contexto, cite separadamente a fonte correspondente.
-Ao final de cada resposta, apresente uma lista individualizada com o nome dos arquivos ou referências utilizadas, sob o título: Fontes consultadas.
+1. Sempre que utilizar **qualquer informação extraída do contexto**, cite a fonte logo após a afirmação, no formato: [Fonte: nome-do-arquivo.ext].
+   - Exemplo: A acne é uma condição comum na adolescência [Fonte: acne.md].
+2. Se usar **qualquer informação que não esteja no contexto fornecido**, ainda assim você pode responder, mas deve marcar essa parte com [Sem fonte].
+   - Exemplo: A acne pode impactar a autoestima [Sem fonte].
+3. Mantenha a resposta fluida, com clareza e tom profissional.
+4. Explique termos técnicos, se necessário, de forma acessível.
 
-Adote um tom profissional e objetivo. Explique termos técnicos de forma acessível, sempre que necessário, mantendo clareza e precisão nas respostas."""),
+⚠️ Resumos sem referência, respostas sem marcação de fonte, ou respostas vagas serão considerados inválidos.
+""")
+,
         MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ])
@@ -47,7 +51,6 @@ Adote um tom profissional e objetivo. Explique termos técnicos de forma acessí
         model=MODEL_CHAT,
         streaming=True
     )
-
 
 def show():
     st.title("Interface de Chat com RAG")
@@ -74,13 +77,17 @@ def show():
         try:
             docs = search_documents(prompt, k=10)
             context = ""
+            fontes_usadas = []
             for i, (doc, score) in enumerate(docs):
-                source = doc.metadata.get('source', 'Fonte desconhecida')
-                context += f"Fonte {i + 1} ({source}): {doc.page_content}\n\n"
+                source = doc.metadata.get('source', 'Fonte desconhecida')  
+                context += f"{doc.page_content}\n[Fonte: {source}]\n\n"
+                if source not in fontes_usadas:
+                    fontes_usadas.append(source)
         except Exception as e:
             st.error(f"Erro na busca de contexto: {str(e)}")
             context = "Nenhum contexto encontrado."
-            
+            fontes_usadas = []
+
         chat_history = history.messages[:-1]
 
         with st.chat_message("assistant"):
@@ -95,14 +102,11 @@ def show():
                 }):
                     if content := getattr(chunk, 'content', ''):
                         full_response += content
-                        # Limpeza parcial durante o stream
-                        partial_clean = re.sub(r"\[\s*[^]]+\s*\]", "", full_response)
-                        response_placeholder.markdown(partial_clean + "▌")
+                        response_placeholder.markdown(full_response + "▌")
 
-                # Limpeza final da resposta antes de exibir e salvar
-                cleaned_response = re.sub(r"\[\s*[^]]+\s*\]", "", full_response)
-                response_placeholder.markdown(cleaned_response.strip())
-                history.add_messages([AIMessage(content=cleaned_response.strip())])
+                # Exibe resposta final e salva no histórico (sem limpar ou alterar)
+                response_placeholder.markdown(full_response.strip())
+                history.add_messages([AIMessage(content=full_response.strip())])
 
             except Exception as e:
                 st.error(f"Erro na geração da resposta: {str(e)}")
