@@ -7,7 +7,6 @@ from utils import get_by_session_id
 from faiss_db import search_documents
 from dotenv import load_dotenv
 import os
-import re
 
 load_dotenv()
 
@@ -26,22 +25,23 @@ def load_llm():
         ("system", """
 Você é um assistente especializado em estética facial, corporal e procedimentos estéticos.
 
-Baseie suas respostas principalmente no conteúdo do contexto abaixo, extraído de arquivos fornecidos.
+Baseie suas respostas exclusivamente no conteúdo fornecido abaixo como contexto, extraído de documentos técnicos:
 
 {context}
 
-Regras obrigatórias para sua resposta:
+Regras obrigatórias:
+1. Para cada informação que você extrair do contexto acima, cite logo após a frase, no formato: [Fonte: nome-do-arquivo.ext].
+   Exemplo: "A acne é uma condição inflamatória da pele [Fonte: acne.md]."
 
-1. Sempre que utilizar **qualquer informação extraída do contexto**, cite a fonte logo após a afirmação, no formato: [Fonte: nome-do-arquivo.ext].
-   - Exemplo: A acne é uma condição comum na adolescência [Fonte: acne.md].
-2. Se usar **qualquer informação que não esteja no contexto fornecido**, ainda assim você pode responder, mas deve marcar essa parte com [Sem fonte].
-   - Exemplo: A acne pode impactar a autoestima [Sem fonte].
-3. Mantenha a resposta fluida, com clareza e tom profissional.
-4. Explique termos técnicos, se necessário, de forma acessível.
+2. Para toda informação que **não constar no contexto acima**, você deve marcar a frase com: [Sem fonte].
+   Exemplo: "Essa condição pode afetar a autoestima [Sem fonte]."
 
-⚠️ Resumos sem referência, respostas sem marcação de fonte, ou respostas vagas serão considerados inválidos.
-""")
-,
+3. NÃO RESUMA. NÃO AGRUPE fontes. CITE após cada afirmação.
+
+4. Mantenha tom técnico, claro e profissional. Explique termos se necessário.
+
+IMPORTANTE: Toda frase precisa indicar a origem: [Fonte: ...] ou [Sem fonte]. Isso é obrigatório.
+"""),
         MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ])
@@ -54,7 +54,7 @@ Regras obrigatórias para sua resposta:
 
 def show():
     st.title("Interface de Chat com RAG")
-    st.write("Área para interação via chat utilizando RAG para buscar informações na base FAISS.")
+    st.write("Chat especializado com referências extraídas diretamente da base FAISS.")
 
     with st.sidebar:
         st.header("Opções de Chat")
@@ -77,16 +77,12 @@ def show():
         try:
             docs = search_documents(prompt, k=10)
             context = ""
-            fontes_usadas = []
-            for i, (doc, score) in enumerate(docs):
-                source = doc.metadata.get('source', 'Fonte desconhecida')  
+            for doc, score in docs:
+                source = doc.metadata.get('source', 'Fonte desconhecida')
                 context += f"{doc.page_content}\n[Fonte: {source}]\n\n"
-                if source not in fontes_usadas:
-                    fontes_usadas.append(source)
         except Exception as e:
             st.error(f"Erro na busca de contexto: {str(e)}")
             context = "Nenhum contexto encontrado."
-            fontes_usadas = []
 
         chat_history = history.messages[:-1]
 
@@ -104,9 +100,11 @@ def show():
                         full_response += content
                         response_placeholder.markdown(full_response + "▌")
 
-                # Exibe resposta final e salva no histórico (sem limpar ou alterar)
                 response_placeholder.markdown(full_response.strip())
                 history.add_messages([AIMessage(content=full_response.strip())])
+
+                if "[Fonte:" not in full_response and "[Sem fonte]" not in full_response:
+                    st.warning("⚠️ A resposta não indicou nenhuma fonte. Pode ter ignorado o contexto.")
 
             except Exception as e:
                 st.error(f"Erro na geração da resposta: {str(e)}")
