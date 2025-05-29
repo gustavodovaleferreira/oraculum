@@ -106,9 +106,6 @@ def show():
                 if "[Fonte:" not in full_response and "[Sem fonte]" not in full_response:
                     st.warning("⚠️ A resposta não indicou nenhuma fonte. Pode ter ignorado o contexto.")
 
-
-.
-
             except Exception as e:
                 st.error(f"Erro na geração da resposta: {str(e)}")
                 history.add_messages([AIMessage(content="Desculpe, ocorreu um erro interno.")])
