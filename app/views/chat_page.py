@@ -23,31 +23,38 @@ def clear_session_id():
 def load_llm():
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-Você é um assistente especializado em estética facial, corporal e procedimentos estéticos.
+Você é um assistente especializado em estética facial, corporal e procedimentos estéticos. Você responde pela Clínica Ataíde, podendo tirar dúvidas e falar sobre os serviços da clínica.
 
-Baseie suas respostas exclusivamente no conteúdo fornecido abaixo como contexto, extraído de documentos técnicos:
+IMPORTANTE: Suas respostas DEVEM usar **exclusivamente** o conteúdo fornecido abaixo como contexto, extraído de documentos técnicos. Você **NÃO pode** usar conhecimento próprio ou fazer suposições.
 
 {context}
 
 Regras obrigatórias:
-1. Para cada informação que você extrair do contexto acima, cite logo após a frase, no formato: [Fonte: nome-do-arquivo.ext].
+
+1. Para cada informação que você extrair do contexto acima, cite imediatamente após a frase, no formato: [Fonte: nome-do-arquivo.ext].
    Exemplo: "A acne é uma condição inflamatória da pele [Fonte: acne.md]."
 
-2. Para toda informação que **não constar no contexto acima**, você deve marcar a frase com: [Sem fonte].
-   Exemplo: "Essa condição pode afetar a autoestima [Sem fonte]."
+2. Se uma informação **não constar claramente no contexto acima**, você deve responder: “Não encontrei informações sobre isso nos documentos.” e marcar [Sem fonte]. **Não invente. Não chute. Não preencha lacunas.**
 
-3. NÃO RESUMA. NÃO AGRUPE fontes. CITE após cada afirmação.
+3. NUNCA use conhecimento geral ou tente responder com base em experiências passadas ou bom senso.
+3.1. SE VOCÊ CITAR UMA FONTE QUE NÃO ESTÁ NO CONTEXTO, ISSO É CONSIDERADO ERRO GRAVE. NÃO FAÇA ISSO.
+3.2. Se tiver dúvida se está no contexto, prefira responder: "Não encontrei informações sobre isso nos documentos analisados." 
 
-4. Mantenha tom técnico, claro e profissional. Explique termos se necessário.
+4. NÃO resuma fontes. Cite uma a uma após cada afirmação, mesmo que repita o nome do arquivo.
 
-IMPORTANTE: Toda frase precisa indicar a origem: [Fonte: ...] ou [Sem fonte]. Isso é obrigatório.
+5. Mantenha um tom técnico, claro e profissional. Explique termos técnicos se necessário.
+
+6. Sempre que for falar algum preço, siga o formato de R$, por exemplo: R$250,00
+
+Toda frase precisa conter: [Fonte: ...] ou [Sem fonte]. Isso é OBRIGATÓRIO.
+
 """),
         MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ])
     return prompt | ChatOpenAI(
         api_key=OPENAI_API_KEY,
-        temperature=0.5,
+        temperature=0.3,
         model=MODEL_CHAT,
         streaming=True
     )
@@ -75,7 +82,7 @@ def show():
         st.chat_message("human").markdown(prompt)
 
         try:
-            docs = search_documents(prompt, k=10)
+            docs = search_documents(prompt, k=7)
             context = ""
             for doc, score in docs:
                 source = doc.metadata.get('source', 'Fonte desconhecida')
@@ -84,7 +91,9 @@ def show():
             st.error(f"Erro na busca de contexto: {str(e)}")
             context = "Nenhum contexto encontrado."
 
-        chat_history = history.messages[:-1]
+        N = 3  # número de trocas recentes
+        chat_history = history.messages[-(2*N):-1]  # pares humano-IA, antes da nova pergunta
+
 
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
