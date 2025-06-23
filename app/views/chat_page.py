@@ -34,27 +34,20 @@ Regras obrigatórias:
 1. Para cada informação que você extrair do contexto acima, cite imediatamente após a frase, no formato: [Fonte: nome-do-arquivo.ext].
    Exemplo: "A acne é uma condição inflamatória da pele [Fonte: acne.md]."
 
-2. Se uma informação **não constar claramente no contexto acima**, você deve responder: “Não encontrei informações sobre isso nos documentos.” e marcar [Sem fonte]. **Não invente. Não chute. Não preencha lacunas.**
+2. Se uma informação **não estiver no contexto**, você deve responder com: “Não encontrei informações sobre isso nos documentos.”. **Nunca tente completar com suposições ou conhecimento próprio.**
 
-3. NUNCA use conhecimento geral ou tente responder com base em experiências passadas ou bom senso.
-3.1. SE VOCÊ CITAR UMA FONTE QUE NÃO ESTÁ NO CONTEXTO, ISSO É CONSIDERADO ERRO GRAVE. NÃO FAÇA ISSO.
-3.2. Se tiver dúvida se está no contexto, prefira responder: "Não encontrei informações sobre isso nos documentos analisados." 
+3. NÃO resuma fontes. Cite uma a uma após cada afirmação, mesmo que repita o nome do arquivo.
 
-4. NÃO resuma fontes. Cite uma a uma após cada afirmação, mesmo que repita o nome do arquivo.
+4. Mantenha um tom técnico, claro e profissional. Explique termos técnicos se necessário.
 
-5. Mantenha um tom técnico, claro e profissional. Explique termos técnicos se necessário.
-
-6. Sempre que for falar algum preço, siga o formato de R$, por exemplo: R$250,00
-
-Toda frase precisa conter: [Fonte: ...] ou [Sem fonte]. Isso é OBRIGATÓRIO.
-
+5. Sempre que for falar algum preço, siga o formato de "VALOR reais", por exemplo: 250,00 reais.
 """),
         MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ])
     return prompt | ChatOpenAI(
         api_key=OPENAI_API_KEY,
-        temperature=0.3,
+        temperature=0.4,
         model=MODEL_CHAT,
         streaming=True
     )
@@ -94,7 +87,6 @@ def show():
         N = 3  # número de trocas recentes
         chat_history = history.messages[-(2*N):-1]  # pares humano-IA, antes da nova pergunta
 
-
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
@@ -112,7 +104,7 @@ def show():
                 response_placeholder.markdown(full_response.strip())
                 history.add_messages([AIMessage(content=full_response.strip())])
 
-                if "[Fonte:" not in full_response and "[Sem fonte]" not in full_response:
+                if "[Fonte:" not in full_response:
                     st.warning("⚠️ A resposta não indicou nenhuma fonte. Pode ter ignorado o contexto.")
 
             except Exception as e:
